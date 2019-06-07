@@ -1,0 +1,197 @@
+---
+title: "bimm143_class14"
+author: "Fangchao He"
+date: "5/16/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+counts <- read.csv("airway_scaledcounts.csv", stringsAsFactors = FALSE)
+metadata <-  read.csv("airway_metadata.csv", stringsAsFactors = FALSE)
+rownames(counts) <- counts[,1]
+counts <- counts[, 2:ncol(counts)]
+```
+
+```{r}
+all(colnames(counts) == metadata$id)
+#colnames(counts)
+#metadata$id
+```
+
+```{r}
+control <- metadata[metadata[,"dex"]=="control",]
+control.mean <- rowSums(counts[ ,control$id])/length(control$id) 
+names(control.mean) <- counts$ensgene
+```
+
+```{r}
+head(counts[, control$id])
+```
+
+```{r}
+head(rowSums(counts[, control$id]) / length(control$id))
+```
+
+```{r}
+treated <- metadata[metadata[,"dex"]=="treated",]
+treated.mean <- rowSums(counts[ ,treated$id])/length(treated$id)
+names(treated.mean) <- counts$ensgene
+```
+
+
+```{r}
+head(counts[, treated$id])
+```
+
+```{r}
+meancounts <- data.frame(control.mean, treated.mean)
+row.names(meancounts) <- row.names(counts)
+```
+
+```{r}
+colSums(meancounts)
+```
+
+```{r}
+plot(meancounts)
+```
+
+Plot on a log-log scale so we can see our data
+```{r}
+plot(meancounts, log = "xy")
+```
+
+```{r}
+meancounts$log2fc <- log2(meancounts[, "treated.mean"] / meancounts[, "control.mean"])
+head(meancounts)
+```
+
+```{r}
+to.rm <- unique(which(meancounts[,1:2] == 0, arr.ind = TRUE)[,1])
+```
+
+
+```{r}
+mycounts <- meancounts[-to.rm,]
+nrow(mycounts)
+```
+
+
+How many genes are up in the drug treated cells
+```{r}
+up.inds <- mycounts$log2fc > 2
+sum(up.inds)
+```
+
+and how many are down?
+```{r}
+down.inds <- mycounts$log2fc < -2
+sum(down.inds)
+```
+
+```{r}
+head(mycounts[up.inds,])
+```
+
+```{r}
+anno <- read.csv("annotables_grch38.csv")
+head(anno)
+```
+
+```{r}
+mycounts.anno <- merge(mycounts, anno, by.x = "row.names", by.y = "ensgene")
+head(mycounts.anno)
+```
+
+```{r}
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+```
+
+```{r}
+columns(org.Hs.eg.db)
+```
+
+We will use the **mapIds()** function from biconductor to add annotation data to our results
+
+
+```{r}
+mycounts$symbol <- mapIds(org.Hs.eg.db, 
+                          keys = row.names(mycounts), # The gene names in our dataset
+                          keytype = "ENSEMBL", # Format of our gene names
+                          column = "SYMBOL") # What new data do we want to add
+head(mycounts)
+```
+
+```{r}
+mycounts$entrez <- mapIds(org.Hs.eg.db, 
+                          keys = row.names(mycounts), 
+                          keytype = "ENSEMBL", 
+                          column = "ENTREZID")
+head(mycounts)
+```
+
+```{r}
+counts <- read.csv("airway_scaledcounts.csv", stringsAsFactors = FALSE)
+metadata <- read.csv("airway_metadata.csv", stringsAsFactors = FALSE)
+```
+
+```{r}
+library(DESeq2)
+citation("DESeq2")
+dds <- DESeqDataSetFromMatrix(countData=counts, 
+                              colData=metadata, 
+                              design=~dex, 
+                              tidy=TRUE)
+dds
+```
+
+```{r}
+dds <- DESeq(dds)
+```
+
+```{r}
+res <- results(dds)
+head(res)
+```
+
+```{r}
+summary(res)
+```
+
+```{r}
+res05 <- results(dds, alpha = 0.05)
+summary(res05)
+```
+```{r}
+res01 <- as.data.frame(results(dds, alpha = 0.01))
+head(res01)
+
+```
+
+```{r}
+x <- c(5,4,1,2)
+x[order(x)]
+```
+
+
+```{r}
+ord.inds <- order(res01$padj)
+write.csv(res01[ord.inds,], file = "signif01_results.csv")
+```
+
+```{r}
+mycols <- rep("gray", nrow(res01))
+mycols[ abs(res01$log2FoldChange) > 2 ] <- "red"
+inds <- (res01$padj < 0.01) & (abs(res01$log2FoldChange) > 2 )
+mycols[inds] <- "darkgreen"
+plot(res01$log2FoldChange, -log(res01$padj), ylab="-Log(P-value)", 
+     col = mycols, 
+     xlab="Log2(FoldChange) (Drug/Control)", pch = 20)
+abline(v=c(-2,2), col="gray", lty=2)
+abline(h=-log(0.1), col="gray", lty=2)
+```
